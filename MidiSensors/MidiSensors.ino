@@ -1,54 +1,53 @@
-#include <CapacitiveSensor.h>
+
 #include <MIDIUSB.h>
 
-//MidiCap.ino
+//MidiSensors.ino
 //Nicola Pisanti, GPLv3 License, 2016
 
-// CAPACITIVE SENSORS TO MIDI
+// SENSORS TO MIDI
 
-// GLOBAL VARS -----------------------------------------------------------------
+// GLOBAL VARS --------------------------------------------------------------------
 #define MIDI_CHANNEL 1
+#define DEFAULT_THRESHOLD_MIN 0
+#define DEFAULT_THRESHOLD_MAX 1024
+#define DEFAULT_THRESHOLD_GATE 512
 #define INPUTS 1
-#define DEFAULT_THRESHOLD_MIN 1000
-#define DEFAULT_THRESHOLD_MAX 6000
-#define DEFAULT_THRESHOLD_TOUCH 10000
-#define SENDPIN 12
-#define SAMPLES 10
 
 // for setting custom value to each different sensors
 // go inside the setup to the CUSTOM VALUES section
 
 // decomment for console output instead of midi
-#define CONSOLE_DEBUG
+//#define CONSOLE_DEBUG
 
+// custom flags for console outputs
 #ifdef CONSOLE_DEBUG
     // select the debug pin
-    #define DEBUG_PIN 2
-    
+    #define DEBUG_PIN A0
+
     // plot the signal
     //#define DEBUG_PLOT
+
     // plot the signal without filtering
     #define DEBUG_PLOT_RAW
 #endif
-// end globals ----------------------------------------------------------------
+// globals end --------------------------------------------------------------------
+
 
 #ifdef CONSOLE_DEBUG
     #define INPUTS 1
 #endif
 
 // sensor struct ...-----------------------------------------------------------
-struct CapInput {
+struct SensorInput {
 
-    CapacitiveSensor* cap;
-    
     int pin;
     bool gateOut;    
     bool envOut;
 
-    int  proximityThresholdMax;
-    int  proximityThresholdMin;
+    int  sensorThresholdMax;
+    int  sensorThresholdMin;
 
-    int  touchThreshold;
+    int  gateThreshold;
     int  gateNote; // note for this sensor on touch   
     bool gateActive;
 
@@ -63,58 +62,52 @@ struct CapInput {
 
 // ----------------------------------------------------------------------------
 
-CapInput sensors[INPUTS];
+SensorInput sensors[INPUTS];
 
 void setup() {
     
     // default values
     for (int i = 0; i < INPUTS; ++i) {
         
-        sensors[i].pin = 2 + i;
+        sensors[i].pin = A0 + i;
         sensors[i].lastValue = 0;
         sensors[i].envYn = 0.0f;
         sensors[i].envLastOutput = 0;
         sensors[i].gateActive = false;
                 
-        sensors[i].gateOut = true;
-        sensors[i].touchThreshold = DEFAULT_THRESHOLD_TOUCH;
+        sensors[i].gateOut = false;  // by default we just send CCs
+        sensors[i].gateThreshold = DEFAULT_THRESHOLD_GATE;
         
         sensors[i].envOut = true;
         
-        sensors[i].proximityThresholdMin = DEFAULT_THRESHOLD_MIN;
-        sensors[i].proximityThresholdMax = DEFAULT_THRESHOLD_MAX;
+        sensors[i].sensorThresholdMin = DEFAULT_THRESHOLD_MIN;
+        sensors[i].sensorThresholdMax = DEFAULT_THRESHOLD_MAX;
         sensors[i].gateNote = 60 + i;
  
         sensors[i].envAlpha = 0.9f;
         sensors[i].envCC = i + 1;
     }
+
     
-#ifndef CONSOLE_DEBUG
-    // TEST VALUES
+#ifdef CONSOLE_DEBUG
+    // set up your custom test values here
     //sensors[0].pin = DEBUG_PIN;
-    //sensors[0].proximityThresholdMin = 0;
-    //sensors[0].proximityThresholdMax = 10000;
-    //sensors[0].touchThreshold = 16000;    
+    //sensors[0].sensorThresholdMin = 0;
+    //sensors[0].sensorThresholdMax = 10000;
+    //sensors[0].gateThreshold = 16000;    
     //sensors[0].gateNote = 60 + i;
     //sensors[0].envRelCoeff = 0.99f;
 #else
     // set up custom values for the sketch here ------------CUSTOM VALUES---------------
     // for example 
-    //sensors[0].pin = 4;
-    //sensors[1].proximityThresholdMin = 0;
-    //sensors[1].proximityThresholdMax = 10000;
+    //sensors[0].pin = A4;
+    //sensors[1].sensorThresholdMin = 0;
+    //sensors[1].sensorThresholdMax = 10000;
     //sensors[2].gateNote = 60 + i;
     //sensors[2].envRelCoeff = 0.99f;
     // --------------------------------------------------------------------------------
 #endif
 
-    // set up capacitive sensors
-    for (int i = 0; i < INPUTS; ++i) {
-        sensors[i].cap = new CapacitiveSensor(SENDPIN, sensors[i].pin);
-        
-        // decomment to turn off autocalibrate on all channell
-        //sensors[i].cap->set_CS_AutocaL_Millis(0xFFFFFFFF); 
-    }
         
 #ifdef CONSOLE_DEBUG
     Serial.begin(57600);
@@ -143,13 +136,13 @@ void loop() {
 
     for ( int i = 0; i < INPUTS; ++i ) {
         
-        int sensorValue = abs(sensors[i].cap->capacitiveSensor( SAMPLES ));
+        int sensorValue = analogRead(sensors[i].pin);
         
         if ( sensors[i].gateOut) { // TRIGGER ROUTINE --------------------------------------------------
            
             if ( sensors[i].gateActive ) {
                     
-                    if(sensorValue < sensors[i].touchThreshold){
+                    if(sensorValue < sensors[i].gateThreshold){
                       
                         sensors[i].gateActive = false;              
                         
@@ -168,7 +161,7 @@ void loop() {
                     
             }else{
 
-                    if(sensorValue > sensors[i].touchThreshold){
+                    if(sensorValue > sensors[i].gateThreshold){
                         
                         sensors[i].gateActive = true;
                                             
@@ -196,9 +189,9 @@ void loop() {
             sensors[i].envYn = sensors[i].envAlpha * (sensors[i].envYn - xn) + xn;
 
             // MAPPING VALUES
-            int out = constrain( sensors[i].envYn, sensors[i].proximityThresholdMin, sensors[i].proximityThresholdMax ); 
-            out = map (out , sensors[i].proximityThresholdMin, 
-                                   sensors[i].proximityThresholdMax, 
+            int out = constrain( sensors[i].envYn, sensors[i].sensorThresholdMin, sensors[i].sensorThresholdMax ); 
+            out = map (out , sensors[i].sensorThresholdMin, 
+                                   sensors[i].sensorThresholdMax, 
                                    0, 127 );
             
             if (out != sensors[i].envLastOutput ) {

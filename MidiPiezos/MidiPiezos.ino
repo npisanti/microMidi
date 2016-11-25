@@ -2,40 +2,43 @@
 //MidiPiezos.ino
 //Nicola Pisanti, GPLv3 License, 2016
 
-
 #include "MIDIUSB.h"
 
 // PIEZO SENSOR MIDI BOARD
 
 // globals --------------------------------------------------------------------
 #define MIDI_CHANNEL 1
-
+// all the inputs must have a sensor connected, otherwise you will get noisy outputs
+#define INPUTS 6
 // decomment for console output instead of midi
-//#define CONSOLE_DEBUG
+#define CONSOLE_DEBUG
+// this has to be a negative number, avoid unwanted retriggering of piezo
+#define HYSTERESYS -30
 
+// custom flags for console outputs
 #ifdef CONSOLE_DEBUG
     // select the debug pin
-    #define DEBUG_PIN A5
+    #define DEBUG_PIN A0
     // plot the signal
     #define DEBUG_PLOT
     // plot the signal without filtering
     //#define DEBUG_PLOT_RAW
+    
+    // test values
     #define TEST_GATE_LO 40
     #define TEST_GATE_HI 600
     #define TEST_ENV_LO 10
     #define TEST_ENV_HI 240
 #endif
 
-// all the inputs must have a sensor connected, otherwise you will get noisy outputs
+// for setting custom value to each different sensors
+// go inside the setup to the CUSTOM VALUES section
+
+// globals end --------------------------------------------------------------------
+
 #ifdef CONSOLE_DEBUG
-#define INPUTS 1
-#else 
-    #define INPUTS 6
+    #define INPUTS 1
 #endif
-
-// this has to be a negative number
-#define HYSTERESYS -30
-
 
 // sensor struct ...-----------------------------------------------------------
 struct PiezoInput {
@@ -85,9 +88,9 @@ void setup() {
     }
     
 #ifndef CONSOLE_DEBUG
-
-    // set up custom values here
-
+    // set up custom values for the sketch here ------------CUSTOM VALUES---------------
+    // example tested with drumkit 
+    
     // HI HAT
     sensors[0].gateThresholdMin = 5;
     sensors[0].gateThresholdMax = 800;
@@ -125,7 +128,8 @@ void setup() {
     sensors[5].envThresholdMin = 10;
     sensors[5].envThresholdMax = 240;
     sensors[5].envRelCoeff = 0.99f;
-
+    // ------------------------------end custom values----------------------------------
+    
 #else
     // TEST VALUES
     sensors[0].pin = DEBUG_PIN;
