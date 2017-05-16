@@ -2,16 +2,16 @@
 #include <MIDIUSB.h>
 
 //MidiCap.ino
-//Nicola Pisanti, GPLv3 License, 2016
+//Nicola Pisanti, GPLv3 License, 2016-2017
 
 // CAPACITIVE SENSORS TO MIDI
+// TOUCH ONLY
 
 // GLOBAL VARS -----------------------------------------------------------------
 #define MIDI_CHANNEL 1
-#define INPUTS 1
-#define DEFAULT_THRESHOLD_MIN 1000
-#define DEFAULT_THRESHOLD_MAX 6000
-#define DEFAULT_THRESHOLD_TOUCH 10000
+#define INPUTS 2
+#define DEFAULT_THRESHOLD_ON 3000
+#define DEFAULT_THRESHOLD_OFF 1500
 #define SENDPIN 12
 #define SAMPLES 10
 
@@ -21,44 +21,25 @@
 // decomment for console output instead of midi
 #define CONSOLE_DEBUG
 
-#ifdef CONSOLE_DEBUG
-    // select the debug pin
-    #define DEBUG_PIN 2
-    
-    // plot the signal
-    //#define DEBUG_PLOT
-    // plot the signal without filtering
-    #define DEBUG_PLOT_RAW
+#ifdef CONSOLE_DEBUG    
+    // plot the signal, send messages to console if decommented
+    #define DEBUG_PLOT
 #endif
 // end globals ----------------------------------------------------------------
-
-#ifdef CONSOLE_DEBUG
-    #define INPUTS 1
-#endif
 
 // sensor struct ...-----------------------------------------------------------
 struct CapInput {
 
     CapacitiveSensor* cap;
     
-    int pin;
-    bool gateOut;    
-    bool envOut;
+    int pin;   
 
-    int  proximityThresholdMax;
-    int  proximityThresholdMin;
+    int  thresholdOff;
+    int  thresholdOn;
 
-    int  touchThreshold;
     int  gateNote; // note for this sensor on touch   
     bool gateActive;
 
-    int  envThresholdMin;
-    int  envThresholdMax;
-    float envAlpha;
-    float envYn;
-    int   envCC;
-    int   envLastOutput;
-    int   lastValue;
 };
 
 // ----------------------------------------------------------------------------
@@ -69,44 +50,24 @@ void setup() {
     
     // default values
     for (int i = 0; i < INPUTS; ++i) {
-        
         sensors[i].pin = 2 + i;
-        sensors[i].lastValue = 0;
-        sensors[i].envYn = 0.0f;
-        sensors[i].envLastOutput = 0;
         sensors[i].gateActive = false;
-                
-        sensors[i].gateOut = true;
-        sensors[i].touchThreshold = DEFAULT_THRESHOLD_TOUCH;
-        
-        sensors[i].envOut = true;
-        
-        sensors[i].proximityThresholdMin = DEFAULT_THRESHOLD_MIN;
-        sensors[i].proximityThresholdMax = DEFAULT_THRESHOLD_MAX;
+        sensors[i].thresholdOn = DEFAULT_THRESHOLD_ON;
+        sensors[i].thresholdOff = DEFAULT_THRESHOLD_OFF;
         sensors[i].gateNote = 60 + i;
- 
-        sensors[i].envAlpha = 0.9f;
-        sensors[i].envCC = i + 1;
     }
-    
-#ifndef CONSOLE_DEBUG
-    // TEST VALUES
-    //sensors[0].pin = DEBUG_PIN;
-    //sensors[0].proximityThresholdMin = 0;
-    //sensors[0].proximityThresholdMax = 10000;
-    //sensors[0].touchThreshold = 16000;    
-    //sensors[0].gateNote = 60 + i;
-    //sensors[0].envRelCoeff = 0.99f;
-#else
+
+#ifdef DEBUG_PLOT
+    //sensors[0].pin = 2; //change test pin only on testing
+#endif
+
     // set up custom values for the sketch here ------------CUSTOM VALUES---------------
     // for example 
     //sensors[0].pin = 4;
-    //sensors[1].proximityThresholdMin = 0;
-    //sensors[1].proximityThresholdMax = 10000;
+    //sensors[1].thresholdOn = 0;
+    //sensors[1].thresholdOff = 10000;
     //sensors[2].gateNote = 60 + i;
-    //sensors[2].envRelCoeff = 0.99f;
     // --------------------------------------------------------------------------------
-#endif
 
     // set up capacitive sensors
     for (int i = 0; i < INPUTS; ++i) {
@@ -143,100 +104,62 @@ void loop() {
 
     for ( int i = 0; i < INPUTS; ++i ) {
         
-        int sensorValue = abs(sensors[i].cap->capacitiveSensor( SAMPLES ));
+        int sensorValue = sensors[i].cap->capacitiveSensor( SAMPLES );
+        if(sensorValue<0) sensorValue = -sensorValue;
         
-        if ( sensors[i].gateOut) { // TRIGGER ROUTINE --------------------------------------------------
-           
-            if ( sensors[i].gateActive ) {
-                    
-                    if(sensorValue < sensors[i].touchThreshold){
-                      
-                        sensors[i].gateActive = false;              
-                        
-    #ifdef CONSOLE_DEBUG
-    #ifndef DEBUG_PLOT
-                        Serial.print("sending note off, note ");
-                        Serial.print(sensors[i].gateNote);
-                        Serial.print(" from pin ");
-                        Serial.println( sensors[i].pin );
-    #endif
-    #else
-                        noteOff( MIDI_CHANNEL, sensors[i].gateNote, 127 );
-    #endif
-                        
-                    }
-                    
-            }else{
+#ifdef DEBUG_PLOT
+        if(i==INPUTS-1){
+          Serial.println(sensorValue);
+        }else{
+          Serial.print(sensorValue);
+          Serial.print(",");
+        }
+#endif
 
-                    if(sensorValue > sensors[i].touchThreshold){
-                        
-                        sensors[i].gateActive = true;
-                                            
-    #ifdef CONSOLE_DEBUG
-    #ifndef DEBUG_PLOT
-                        Serial.print("sending note on, note ");
-                        Serial.print(sensors[i].gateNote);
-                        Serial.print(" from pin ");
-                        Serial.println( sensors[i].pin );
-    #endif
-    #else
-                        noteOn( MIDI_CHANNEL, sensors[i].gateNote, 127 );
-    #endif
-                    }
-            
-            }
-          
-        } // end of trigger routine -------------------------------------------------------------
-        
-        
-        if ( sensors[i].envOut ) { // CC ROUTINE --------------------------------------------------
-            
-            // LP FILTER CODE
-            float xn = sensorValue;
-            sensors[i].envYn = sensors[i].envAlpha * (sensors[i].envYn - xn) + xn;
-
-            // MAPPING VALUES
-            int out = constrain( sensors[i].envYn, sensors[i].proximityThresholdMin, sensors[i].proximityThresholdMax ); 
-            out = map (out , sensors[i].proximityThresholdMin, 
-                                   sensors[i].proximityThresholdMax, 
-                                   0, 127 );
-            
-            if (out != sensors[i].envLastOutput ) {
+        if ( sensors[i].gateActive ) {
+                
+                if(sensorValue < sensors[i].thresholdOff){
+                  
+                    sensors[i].gateActive = false;              
+                    
 #ifdef CONSOLE_DEBUG
 #ifndef DEBUG_PLOT
-                Serial.print("sending CC, control ");
-                Serial.print(sensors[i].envCC);
-                Serial.print(", value ");
-                Serial.print(out);
-                Serial.print(" from pin ");
-                Serial.println( sensors[i].pin );
+                    Serial.print("sending note off, note ");
+                    Serial.print(sensors[i].gateNote);
+                    Serial.print(" from pin ");
+                    Serial.println( sensors[i].pin );
 #endif
 #else
-                controlChange( MIDI_CHANNEL, sensors[i].envCC, out );
+                    noteOff( MIDI_CHANNEL, sensors[i].gateNote, 127 );
 #endif
-          }
- 
-          sensors[i].envLastOutput = out;
-        
-        } // end of cc routine ------------------------------------------------------------------
-    
-        sensors[i].lastValue = sensorValue;
-    
-#ifdef DEBUG_PLOT
-#ifdef DEBUG_PLOT_RAW
-        Serial.println(sensorValue);
-        //Serial.println(sensors[i].envYn);
+                    
+                }
+                
+        } else {
+
+                if(sensorValue > sensors[i].thresholdOn){
+                    
+                    sensors[i].gateActive = true;
+            
+#ifdef CONSOLE_DEBUG
+#ifndef DEBUG_PLOT
+                    Serial.print("sending note on, note ");
+                    Serial.print(sensors[i].gateNote);
+                    Serial.print(" from pin ");
+                    Serial.println( sensors[i].pin );
+#endif
 #else
-        Serial.println(sensors[0].envLastOutput);
+                    noteOn( MIDI_CHANNEL, sensors[i].gateNote, 127 );
 #endif
-#endif
-    
-#ifndef CONSOLE_DEBUG
-        MidiUSB.flush(); // send midi
-#endif
+                }
+        }
     }   
     
+#ifndef CONSOLE_DEBUG
+    MidiUSB.flush(); // send midi
+#endif
     delay(5);        // delay in between reads for stability
+
 }
 
 
